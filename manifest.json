@@ -1,0 +1,62 @@
+{
+  "manifest_version": 3,
+  "name": "AI Reply Generator",
+  "version": "1.0.0",
+  "description": "Generate AI-powered replies to LinkedIn and X posts",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.linkedin.com/*",
+    "https://linkedin.com/*",
+    "https://x.com/*",
+    "https://twitter.com/*",
+    "http://localhost:3000/*",
+    "http://localhost:3001/*",
+    "https://replier.elcarainternal.lol/*",
+    "https://replydash.app/*"
+  ],
+  "externally_connectable": {
+    "matches": [
+      "https://replydash.app/*",
+      "https://replier.elcarainternal.lol/*"
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.linkedin.com/*",
+        "https://linkedin.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "https://x.com/*",
+        "https://twitter.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "http://localhost:3001/*",
+        "https://replier.elcarainternal.lol/*",
+        "https://www.replydash.app/*",
+        "https://replydash.app/*"
+      ],
+      "js": ["dashboard-bridge.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AI Reply Generator"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
