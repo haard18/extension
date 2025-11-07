@@ -1,69 +1,197 @@
 /**
- * Popup Script
- * Handles popup UI interactions and authentication status
+ * Extension Popup Script
+ * Handles UI interactions, tone selection, quota tracking, and authentication
  */
 
-// Dashboard URL where users can send their token
-const DASHBOARD_URL = "https://replydash.app/dashboard";
+const DASHBOARD_URL = "http://localhost:3001/dashboard";
+const BACKEND_URL = "http://localhost:3000";
+const QUOTA_POLL_INTERVAL = 15000; // 15 seconds
+
+let quotaPollTimer = null;
 
 /**
- * Check if user has a valid authentication token
+ * Initialize the popup on load
+ */
+async function initPopup() {
+  checkAuthStatus();
+  setupToneToggle();
+  startQuotaPolling();
+}
+
+/**
+ * Setup tone toggle buttons
+ */
+function setupToneToggle() {
+  const toneValueBtn = document.getElementById("toneValue");
+  const toneFunnyBtn = document.getElementById("toneFunny");
+
+  toneValueBtn.addEventListener("click", () => setTone("value", toneValueBtn, toneFunnyBtn));
+  toneFunnyBtn.addEventListener("click", () => setTone("funny", toneFunnyBtn, toneValueBtn));
+
+  // Load saved tone preference
+  chrome.storage.local.get(["replyTone"], (result) => {
+    const savedTone = result.replyTone || "value";
+    if (savedTone === "funny") {
+      toneFunnyBtn.click();
+    }
+  });
+}
+
+/**
+ * Set the reply tone and update UI
+ */
+function setTone(tone, activeBtn, inactiveBtn) {
+  chrome.storage.local.set({ replyTone: tone }, () => {
+    activeBtn.classList.add("active");
+    inactiveBtn.classList.remove("active");
+    console.log(`✅ Tone set to: ${tone}`);
+  });
+}
+
+/**
+ * Check authentication status and display appropriate UI
  */
 async function checkAuthStatus() {
   try {
     const data = await new Promise((resolve) => {
-      chrome.storage.local.get(['clerkToken', 'clerkTokenTimestamp'], resolve);
+      chrome.storage.local.get(["clerkToken", "clerkTokenTimestamp"], resolve);
     });
 
-    const authIndicator = document.getElementById('authStatusIndicator');
-    const authStatusText = document.getElementById('authStatusText');
-    const authMessage = document.getElementById('authMessage');
-    const userInfo = document.getElementById('userInfo');
-    const tokenExpires = document.getElementById('tokenExpires');
-    const authButton = document.getElementById('authButton');
+    const authSection = document.getElementById("authSection");
+    const statusSection = document.getElementById("statusSection");
+    const quotaDisplay = document.getElementById("quotaDisplay");
+    const toneSection = document.getElementById("toneSection");
+    const infoSection = document.getElementById("infoSection");
+    const statusText = document.getElementById("statusText");
+    const statusDot = document.getElementById("statusDot");
+    const authButton = document.getElementById("authButton");
 
     if (data.clerkToken) {
-      // Token exists - check if it's still valid (decode JWT)
+      // Check if token is valid
       try {
-        const tokenParts = data.clerkToken.split('.');
+        const tokenParts = data.clerkToken.split(".");
         if (tokenParts.length === 3) {
           const payload = JSON.parse(atob(tokenParts[1]));
           const expiryDate = new Date(payload.exp * 1000);
           const now = new Date();
 
           if (expiryDate > now) {
-            // Token is valid
-            authIndicator.classList.add('authenticated');
-            authStatusText.textContent = 'Authenticated ✓';
-            authMessage.textContent = 'Your extension is connected to Replier and ready to use!';
-            userInfo.style.display = 'block';
-            tokenExpires.textContent = expiryDate.toLocaleString();
-            authButton.textContent = '🔄 Refresh Token';
+            // Token is valid - show authenticated UI
+            authSection.classList.add("hidden");
+            quotaDisplay.classList.remove("hidden");
+            toneSection.classList.remove("hidden");
+            infoSection.classList.remove("hidden");
+            statusText.textContent = "Connected ✓";
+            statusDot.classList.remove("inactive");
+            
+            // Fetch current usage
+            await fetchAndDisplayUsage(data.clerkToken);
             return;
           }
         }
       } catch (e) {
-        console.warn('Error decoding token:', e);
+        console.warn("Error decoding token:", e);
       }
     }
 
-    // No token or token is expired
-    authIndicator.classList.remove('authenticated');
-    authStatusText.textContent = 'Not authenticated';
-    authMessage.innerHTML = 'Go to your <a href="#" id="dashboardLink">dashboard</a> and click "Send Token to Extension" to connect.';
-    userInfo.style.display = 'none';
-    authButton.textContent = '🔐 Authenticate';
-
-    // Add click handler for dashboard link
-    const dashboardLink = document.getElementById('dashboardLink');
-    if (dashboardLink) {
-      dashboardLink.addEventListener('click', (e) => {
-        e.preventDefault();
-        chrome.tabs.create({ url: DASHBOARD_URL });
-      });
-    }
+    // Not authenticated or token expired
+    authSection.classList.remove("hidden");
+    quotaDisplay.classList.add("hidden");
+    toneSection.classList.add("hidden");
+    infoSection.classList.add("hidden");
+    statusText.textContent = "Not connected";
+    statusDot.classList.add("inactive");
+    authButton.textContent = "🔐 Connect Account";
   } catch (error) {
-    console.error('Error checking auth status:', error);
+    console.error("Error checking auth status:", error);
+  }
+}
+
+/**
+ * Fetch current usage from backend and display in UI
+ */
+async function fetchAndDisplayUsage(token) {
+  try {
+    const response = await fetch(`${BACKEND_URL}/usage`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const usage = await response.json();
+    updateQuotaDisplay(usage);
+  } catch (error) {
+    console.warn("Error fetching usage:", error);
+    // Continue without quota data
+  }
+}
+
+/**
+ * Update quota display in UI
+ */
+function updateQuotaDisplay(usage) {
+  if (!usage) return;
+
+  document.getElementById("dailyUsed").textContent = usage.daily_used || 0;
+  document.getElementById("dailyGoal").textContent = usage.daily_goal || 10;
+  document.getElementById("weeklyUsed").textContent = usage.weekly_used || 0;
+  document.getElementById("weeklyGoal").textContent = usage.weekly_goal || 50;
+
+  // Update progress bars
+  const dailyPercent = Math.min(100, ((usage.daily_used || 0) / (usage.daily_goal || 1)) * 100);
+  const weeklyPercent = Math.min(100, ((usage.weekly_used || 0) / (usage.weekly_goal || 1)) * 100);
+
+  const dailyBar = document.getElementById("dailyBar");
+  const weeklyBar = document.getElementById("weeklyBar");
+
+  dailyBar.style.width = `${dailyPercent}%`;
+  weeklyBar.style.width = `${weeklyPercent}%`;
+
+  // Add warning class if over 80%
+  if (dailyPercent > 80) {
+    dailyBar.classList.add("warning");
+  } else {
+    dailyBar.classList.remove("warning");
+  }
+
+  if (weeklyPercent > 80) {
+    weeklyBar.classList.add("warning");
+  } else {
+    weeklyBar.classList.remove("warning");
+  }
+}
+
+/**
+ * Start polling for quota updates
+ */
+function startQuotaPolling() {
+  chrome.storage.local.get(["clerkToken"], (result) => {
+    if (result.clerkToken) {
+      // Poll every 15 seconds
+      quotaPollTimer = setInterval(async () => {
+        chrome.storage.local.get(["clerkToken"], async (data) => {
+          if (data.clerkToken) {
+            await fetchAndDisplayUsage(data.clerkToken);
+          }
+        });
+      }, QUOTA_POLL_INTERVAL);
+    }
+  });
+}
+
+/**
+ * Stop polling for quota updates
+ */
+function stopQuotaPolling() {
+  if (quotaPollTimer) {
+    clearInterval(quotaPollTimer);
+    quotaPollTimer = null;
   }
 }
 
@@ -77,45 +205,22 @@ function openDashboard() {
 // Event listeners
 document.getElementById("authButton").addEventListener("click", openDashboard);
 
-document.getElementById("openSettings").addEventListener("click", () => {
-  alert("Settings page coming soon!");
-});
-
-document.getElementById("openDocs").addEventListener("click", () => {
-  alert(
-    "Documentation:\n\n" +
-      "1. Click '🔐 Authenticate' to connect your Replier account\n" +
-      "2. Visit LinkedIn or X\n" +
-      "3. Look for '🧠 Generate Reply' buttons under posts\n" +
-      "4. Click to generate a reply\n" +
-      "5. The reply will be auto-filled in the comment box"
-  );
-});
-
-// Check backend status
-async function checkBackendStatus() {
-  try {
-    const response = await fetch("https://replier.elcarainternal.lol/health", {
-      method: "GET",
-    });
-    if (response.ok) {
-      console.log("✅ Backend is running");
-    }
-  } catch (error) {
-    console.warn(
-      "⚠️ Backend might not be running. Make sure to start it with: npm start"
-    );
-  }
-}
-
-// Initialize
-checkBackendStatus();
-checkAuthStatus();
-
 // Listen for storage changes (when dashboard sends token)
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === 'local' && changes.clerkToken) {
+  if (areaName === "local" && (changes.clerkToken || changes.replyTone)) {
     checkAuthStatus();
   }
 });
+
+// Clean up when popup closes
+window.addEventListener("unload", () => {
+  stopQuotaPolling();
+});
+
+// Initialize when popup loads
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initPopup);
+} else {
+  initPopup();
+}
 

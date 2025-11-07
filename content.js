@@ -5,7 +5,7 @@
  */
 
 // Backend API endpoint
-const API_ENDPOINT = "https://replier.elcarainternal.lol/generate";
+const API_ENDPOINT = "http://localhost:3000/generate";
 
 /**
  * Detects which platform we're on (LinkedIn or X/Twitter)
@@ -107,23 +107,23 @@ function createGenerateButton() {
  * Generates a reply by calling the backend API
  * Routes to correct endpoint based on platform
  * Includes Clerk authentication token from extension storage
+ * Includes tone preference (funny or value)
  * @param {string} postText - The original post text
  * @param {string} platform - 'linkedin' or 'x'
- * @returns {Promise<string>} The generated reply text
+ * @returns {Promise<object>} The generated reply and usage stats
  */
 async function generateReply(postText, platform) {
   try {
-    // 1. Get the Clerk token from extension storage
-    // Check if chrome.storage is available
+    // 1. Get the Clerk token and tone preference from extension storage
     if (!chrome?.storage?.local) {
       throw new Error(
         'Chrome storage API not available. Please reload the page and try again.'
       );
     }
 
-    const { clerkToken } = await new Promise((resolve, reject) => {
+    const { clerkToken, replyTone } = await new Promise((resolve, reject) => {
       try {
-        chrome.storage.local.get(['clerkToken'], (result) => {
+        chrome.storage.local.get(['clerkToken', 'replyTone'], (result) => {
           if (chrome.runtime.lastError) {
             reject(new Error(chrome.runtime.lastError.message));
           } else {
@@ -143,17 +143,23 @@ async function generateReply(postText, platform) {
 
     // 2. Choose endpoint based on platform
     const endpoint = platform === "x" 
-      ? "https://replier.elcarainternal.lol/generate/twitter"
-      : "https://replier.elcarainternal.lol/generate/linkedin";
+      ? "http://localhost:3000/generate/twitter"
+      : "http://localhost:3000/generate/linkedin";
 
-    // 3. Make authenticated request to backend
+    // Determine default tone based on platform (funny for X, value for LinkedIn)
+    const tone = replyTone || (platform === "x" ? "funny" : "value");
+
+    // 3. Make authenticated request to backend with tone
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${clerkToken}`, // ✅ Include Clerk token
       },
-      body: JSON.stringify({ text: postText }),
+      body: JSON.stringify({ 
+        text: postText,
+        tone: tone,
+      }),
     });
 
     if (!response.ok) {
@@ -167,7 +173,8 @@ async function generateReply(postText, platform) {
       }
     }
 
-    const data = await response.text();
+    // Parse JSON response with reply and usage stats
+    const data = await response.json();
     return data;
   } catch (error) {
     console.error("Error generating reply:", error);
@@ -416,11 +423,17 @@ function attachButtonClickHandler(button, post, platform) {
 
       console.log(`[${platform}] Extracted text: "${postText.substring(0, 50)}..."`);
 
-      // Pass platform to generateReply
-      const reply = await generateReply(postText, platform);
-      console.log(`[${platform}] Generated reply: "${reply.substring(0, 50)}..."`);
+      // Generate reply (now returns { reply, tone, platform, usage })
+      const result = await generateReply(postText, platform);
+      const reply = result.reply;
+      const usage = result.usage;
 
-      // Pass the post element as context to fillReplyBox
+      console.log(`[${platform}] Generated reply: "${reply.substring(0, 50)}..."`);
+      if (usage) {
+        console.log(`[${platform}] Usage: ${usage.daily_used}/${usage.daily_goal} daily, ${usage.weekly_used}/${usage.weekly_goal} weekly`);
+      }
+
+      // Fill reply box with the generated text
       await fillReplyBox(reply, post);
       
       // Success flash
