@@ -3,8 +3,8 @@
  * Handles UI interactions, tone selection, quota tracking, and authentication
  */
 
-const DASHBOARD_URL = "http://localhost:3001/dashboard";
-const BACKEND_URL = "http://localhost:3000";
+const DASHBOARD_URL = "https://replydash.app/dashboard";
+const BACKEND_URL = "https://replier.elcarainternal.lol";
 const QUOTA_POLL_INTERVAL = 15000; // 15 seconds
 
 let quotaPollTimer = null;

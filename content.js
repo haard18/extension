@@ -5,7 +5,7 @@
  */
 
 // Backend API endpoint
-const API_ENDPOINT = "http://localhost:3000/generate";
+const API_ENDPOINT = "https://replier.elcarainternal.lol/generate";
 
 // Track posts that already have buttons to avoid duplicates
 const processedPosts = new WeakSet();
@@ -181,8 +181,8 @@ async function generateReply(postText, platform) {
 
     // 2. Choose endpoint based on platform
     const endpoint = platform === "x" 
-      ? "http://localhost:3000/generate/twitter"
-      : "http://localhost:3000/generate/linkedin";
+      ? "https://replier.elcarainternal.lol/generate/twitter"
+      : "https://replier.elcarainternal.lol/generate/linkedin";
 
     // Determine default tone based on platform (funny for X, value for LinkedIn)
     const tone = replyTone || (platform === "x" ? "funny" : "value");
