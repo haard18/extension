@@ -152,16 +152,16 @@ function createGenerateButton() {
  */
 async function generateReply(postText, platform) {
   try {
-    // 1. Get the Clerk token and tone preference from extension storage
+    // 1. Get the Clerk token, tone preference, and emoji setting from extension storage
     if (!chrome?.storage?.local) {
       throw new Error(
         'Chrome storage API not available. Please reload the page and try again.'
       );
     }
 
-    const { clerkToken, replyTone } = await new Promise((resolve, reject) => {
+    const { clerkToken, replyTone, enableEmojis } = await new Promise((resolve, reject) => {
       try {
-        chrome.storage.local.get(['clerkToken', 'replyTone'], (result) => {
+        chrome.storage.local.get(['clerkToken', 'replyTone', 'enableEmojis'], (result) => {
           if (chrome.runtime.lastError) {
             reject(new Error(chrome.runtime.lastError.message));
           } else {
@@ -186,8 +186,13 @@ async function generateReply(postText, platform) {
 
     // Determine default tone based on platform (funny for X, value for LinkedIn)
     const tone = replyTone || (platform === "x" ? "funny" : "value");
+    
+    // Default emoji setting to true if not set
+    const includeEmojis = enableEmojis !== undefined ? enableEmojis : true;
 
-    // 3. Make authenticated request to backend with tone
+    console.log(`[${platform}] Generating reply with tone: ${tone}, emojis: ${includeEmojis}`);
+
+    // 3. Make authenticated request to backend with tone and emoji preference
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
@@ -197,6 +202,7 @@ async function generateReply(postText, platform) {
       body: JSON.stringify({ 
         text: postText,
         tone: tone,
+        includeEmojis: includeEmojis,
       }),
     });
 

@@ -19,14 +19,30 @@ async function initPopup() {
 }
 
 /**
- * Setup tone toggle buttons
+ * Setup tone toggle buttons and emoji toggle
  */
 function setupToneToggle() {
   const toneValueBtn = document.getElementById("toneValue");
   const toneFunnyBtn = document.getElementById("toneFunny");
+  const emojiToggle = document.getElementById("emojiToggle");
 
   toneValueBtn.addEventListener("click", () => setTone("value", toneValueBtn, toneFunnyBtn));
   toneFunnyBtn.addEventListener("click", () => setTone("funny", toneFunnyBtn, toneValueBtn));
+
+  // Setup emoji toggle
+  if (emojiToggle) {
+    emojiToggle.addEventListener("change", (e) => {
+      chrome.storage.local.set({ enableEmojis: e.target.checked }, () => {
+        console.log(`✅ Emojis ${e.target.checked ? 'enabled' : 'disabled'}`);
+      });
+    });
+
+    // Load saved emoji preference
+    chrome.storage.local.get(["enableEmojis"], (result) => {
+      const enableEmojis = result.enableEmojis !== undefined ? result.enableEmojis : true;
+      emojiToggle.checked = enableEmojis;
+    });
+  }
 
   // Load saved tone preference
   chrome.storage.local.get(["replyTone"], (result) => {
@@ -61,6 +77,7 @@ async function checkAuthStatus() {
     const statusSection = document.getElementById("statusSection");
     const quotaDisplay = document.getElementById("quotaDisplay");
     const toneSection = document.getElementById("toneSection");
+    const emojiSection = document.getElementById("emojiSection");
     const infoSection = document.getElementById("infoSection");
     const statusText = document.getElementById("statusText");
     const statusDot = document.getElementById("statusDot");
@@ -80,6 +97,7 @@ async function checkAuthStatus() {
             authSection.classList.add("hidden");
             quotaDisplay.classList.remove("hidden");
             toneSection.classList.remove("hidden");
+            if (emojiSection) emojiSection.classList.remove("hidden");
             infoSection.classList.remove("hidden");
             statusText.textContent = "Connected ✓";
             statusDot.classList.remove("inactive");
@@ -98,6 +116,7 @@ async function checkAuthStatus() {
     authSection.classList.remove("hidden");
     quotaDisplay.classList.add("hidden");
     toneSection.classList.add("hidden");
+    if (emojiSection) emojiSection.classList.add("hidden");
     infoSection.classList.add("hidden");
     statusText.textContent = "Not connected";
     statusDot.classList.add("inactive");
@@ -205,9 +224,9 @@ function openDashboard() {
 // Event listeners
 document.getElementById("authButton").addEventListener("click", openDashboard);
 
-// Listen for storage changes (when dashboard sends token)
+// Listen for storage changes (when dashboard sends token or settings change)
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === "local" && (changes.clerkToken || changes.replyTone)) {
+  if (areaName === "local" && (changes.clerkToken || changes.replyTone || changes.enableEmojis)) {
     checkAuthStatus();
   }
 });
