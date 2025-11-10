@@ -202,7 +202,7 @@ async function generateReply(postText, platform) {
       body: JSON.stringify({ 
         text: postText,
         tone: tone,
-        includeEmojis: includeEmojis,
+        emojiBool: includeEmojis,
       }),
     });
 
