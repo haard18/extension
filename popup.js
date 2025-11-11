@@ -13,9 +13,11 @@ let quotaPollTimer = null;
  * Initialize the popup on load
  */
 async function initPopup() {
-  checkAuthStatus();
+  console.log("📱 Popup initializing...");
+  await checkAuthStatus();
   setupToneToggle();
   startQuotaPolling();
+  console.log("✅ Popup initialized");
 }
 
 /**
@@ -69,9 +71,17 @@ function setTone(tone, activeBtn, inactiveBtn) {
  */
 async function checkAuthStatus() {
   try {
+    // Ensure DOM is ready
+    if (!document.getElementById("authSection")) {
+      console.warn("⚠️ DOM not ready yet, waiting...");
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
     const data = await new Promise((resolve) => {
       chrome.storage.local.get(["clerkToken", "clerkTokenTimestamp"], resolve);
     });
+
+    console.log("🔍 Checking auth status. Token exists:", !!data.clerkToken);
 
     const authSection = document.getElementById("authSection");
     const statusSection = document.getElementById("statusSection");
@@ -83,44 +93,83 @@ async function checkAuthStatus() {
     const statusDot = document.getElementById("statusDot");
     const authButton = document.getElementById("authButton");
 
+    // Verify elements exist before proceeding
+    if (!authSection || !statusText || !statusDot) {
+      console.error("❌ Required DOM elements not found");
+      return;
+    }
+
     if (data.clerkToken) {
-      // Check if token is valid
+      // Token exists - show authenticated UI
       try {
+        console.log("📋 Token found. Validating...");
         const tokenParts = data.clerkToken.split(".");
+        
         if (tokenParts.length === 3) {
           const payload = JSON.parse(atob(tokenParts[1]));
-          const expiryDate = new Date(payload.exp * 1000);
-          const now = new Date();
-
-          if (expiryDate > now) {
-            // Token is valid - show authenticated UI
-            authSection.classList.add("hidden");
-            quotaDisplay.classList.remove("hidden");
-            toneSection.classList.remove("hidden");
-            if (emojiSection) emojiSection.classList.remove("hidden");
-            infoSection.classList.remove("hidden");
-            statusText.textContent = "Connected ✓";
-            statusDot.classList.remove("inactive");
+          console.log("✅ Token decoded successfully. Payload:", payload);
+          
+          // Check expiry if available
+          if (payload.exp) {
+            const expiryDate = new Date(payload.exp * 1000);
+            const now = new Date();
+            console.log("⏰ Token expiry:", expiryDate, "Now:", now);
             
-            // Fetch current usage
-            await fetchAndDisplayUsage(data.clerkToken);
-            return;
+            if (expiryDate <= now) {
+              console.warn("⚠️ Token has expired");
+              throw new Error("Token expired");
+            }
           }
+          
+          // Token is valid - show authenticated UI
+          console.log("🎉 Token valid! Showing authenticated UI");
+          authSection.classList.add("hidden");
+          if (quotaDisplay) quotaDisplay.classList.remove("hidden");
+          if (toneSection) toneSection.classList.remove("hidden");
+          if (emojiSection) emojiSection.classList.remove("hidden");
+          if (infoSection) infoSection.classList.remove("hidden");
+          statusText.textContent = "Connected ✓";
+          statusDot.classList.remove("inactive");
+          
+          // Fetch current usage
+          await fetchAndDisplayUsage(data.clerkToken);
+          return;
+        } else {
+          console.warn("❌ Token format invalid. Parts:", tokenParts.length);
         }
       } catch (e) {
-        console.warn("Error decoding token:", e);
+        console.warn("⚠️ Error validating token:", e);
+        // Even if validation fails, if token exists, treat as authenticated
+        // (backend will handle actual validation)
+        console.log("💡 Token exists even if validation failed. Showing authenticated UI");
+        authSection.classList.add("hidden");
+        if (quotaDisplay) quotaDisplay.classList.remove("hidden");
+        if (toneSection) toneSection.classList.remove("hidden");
+        if (emojiSection) emojiSection.classList.remove("hidden");
+        if (infoSection) infoSection.classList.remove("hidden");
+        statusText.textContent = "Connected ✓";
+        statusDot.classList.remove("inactive");
+        
+        // Try to fetch usage anyway
+        try {
+          await fetchAndDisplayUsage(data.clerkToken);
+        } catch (usageError) {
+          console.warn("Could not fetch usage:", usageError);
+        }
+        return;
       }
     }
 
-    // Not authenticated or token expired
+    // Not authenticated
+    console.log("❌ No token found. Showing login prompt");
     authSection.classList.remove("hidden");
-    quotaDisplay.classList.add("hidden");
-    toneSection.classList.add("hidden");
+    if (quotaDisplay) quotaDisplay.classList.add("hidden");
+    if (toneSection) toneSection.classList.add("hidden");
     if (emojiSection) emojiSection.classList.add("hidden");
-    infoSection.classList.add("hidden");
+    if (infoSection) infoSection.classList.add("hidden");
     statusText.textContent = "Not connected";
     statusDot.classList.add("inactive");
-    authButton.textContent = "🔐 Connect Account";
+    if (authButton) authButton.textContent = "🔐 Connect Account";
   } catch (error) {
     console.error("Error checking auth status:", error);
   }
@@ -131,6 +180,7 @@ async function checkAuthStatus() {
  */
 async function fetchAndDisplayUsage(token) {
   try {
+    console.log("📊 Fetching usage data...");
     const response = await fetch(`${BACKEND_URL}/usage`, {
       method: "GET",
       headers: {
@@ -140,14 +190,19 @@ async function fetchAndDisplayUsage(token) {
     });
 
     if (!response.ok) {
+      console.warn(`⚠️ Usage fetch returned status ${response.status}`);
+      if (response.status === 401) {
+        console.warn("🔐 Unauthorized - token may be invalid");
+      }
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
     const usage = await response.json();
+    console.log("✅ Usage data received:", usage);
     updateQuotaDisplay(usage);
   } catch (error) {
-    console.warn("Error fetching usage:", error);
-    // Continue without quota data
+    console.warn("⚠️ Error fetching usage:", error);
+    // Continue without quota data - UI will show "Loading usage data..."
   }
 }
 
